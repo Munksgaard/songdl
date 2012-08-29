@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+
+# songdl
+# A song downloader that uses last.fm to search and download songs
+
+import argparse
+import urllib.parse
+import urllib.request
+import hashlib
+import json
+import sys
+import html.parser
+
+quiet = False
+force = False
+verbose = False
+
+def input_num(prompt="", lim=0):
+    s = input(prompt)
+    try:
+        n = int(s)
+    except (ValueError):
+        print("Not a number, try again.")
+        n = input_num(prompt)
+    if n > lim:
+        print("Invalid number.")
+        n = input_num(prompt)
+    return n
+
+def pprint_song(song_json):
+    """Returns a prettified string containing artist, songname and duration"""
+
+    mins = song_json['duration'] // 60
+    sec = str(song_json['duration'] - 60 * mins)
+    if len(sec) == 1: sec = "0" + sec
+    dur = str(mins) + ":" + sec
+    return song_json['artist'] + " - " + song_json['title'] + " (" + dur + ")"
+
+download_hook_count = -1
+def download_hook(blocks_done, blocksize, total):
+    """Displays the download progress"""
+
+    global download_hook_count
+    download_hook_count += 1
+    if blocks_done * (blocksize + 1) >= total and not quiet:
+        print("\rDownloaded {0} of {1} bytes (100%)".format(total, total))
+    elif download_hook_count >= 100 or download_hook_count == -1:
+        download_hook_count = 0
+        if not quiet: print("\rDownloaded {0} of {1} bytes ({2}%)"
+                            .format(blocks_done * blocksize, total, 
+                                    blocks_done * blocksize * 100 // total), 
+                            end='')
+
+def download_song(song_json):
+    filename = html.parser.HTMLParser().unescape(song_json['artist'] 
+                                        + " - " + song_json['title'] + ".mp3")
+    # with open(filename,'wb') as f:
+    #     r=urllib.request.urlopen(song_json['url']).read() # a `bytes` object
+    #     f.write(r)
+    if not quiet: print("Downloading to {0}".format(filename))
+    urllib.request.urlretrieve(song_json['url'], filename, download_hook)
+    if not quiet: print("Download completed")
+
+def query_yes_no(question, default="yes"):
+    """Ask a yes/no question via raw_input() and return their answer.
+    
+    "question" is a string that is presented to the user.
+    "default" is the presumed answer if the user just hits <Enter>.
+        It must be "yes" (the default), "no" or None (meaning
+        an answer is required of the user).
+
+    The "answer" return value is one of "yes" or "no".
+    """
+    valid = {"yes":"yes",   "y":"yes",  "ye":"yes",
+             "no":"no",     "n":"no"}
+    if default == None:
+        prompt = " [y/n] "
+    elif default == "yes":
+        prompt = " [Y/n] "
+    elif default == "no":
+        prompt = " [y/N] "
+    else:
+        raise ValueError("invalid default answer: '%s'" % default)
+
+    while 1:
+        sys.stdout.write(question + prompt)
+        choice = input().lower()
+        if default is not None and choice == '':
+            return default
+        elif choice in valid.keys():
+            return valid[choice]
+        else:
+            sys.stdout.write("Please respond with 'yes' or 'no' "\
+                             "(or 'y' or 'n').\n")
+
+def songdl(query):
+    urlencoded_query = urllib.parse.quote(query)
+
+    if verbose: print(urlencoded_query)
+
+    hashed_query = "327488api_id=525159count=10format=jsonmethod=audio.searchq=" + query + "test_mode=1g5vuj9EWFO"
+    hashed_query = hashlib.md5(hashed_query.encode()).hexdigest()
+
+    if verbose: print(hashed_query)
+
+    url = "http://api.vk.com/api.php?api_id=525159&method=audio.search&format=json&sig=" + hashed_query + "&test_mode=1&count=10&q=" + urlencoded_query
+
+    if verbose: print(url)
+
+    response = urllib.request.urlopen(url).read().decode()
+
+    if verbose: print(response)
+
+    parsed_output = json.loads(response)["response"][1:]
+
+    if len(parsed_output) == 0:
+        if not quiet: print("No songs found.")
+        return 0
+    elif len(parsed_output) == 1 or force:
+        if not quiet: print("Found one song:")
+        song_json = parsed_output[0]['audio']
+        if not quiet: print(pprint_song(song_json))
+        if force or (not quiet and query_yes_no("Download song?") == 'yes'):
+            download_song(song_json)
+    else:
+        print("Choose which song to download:")
+        for item,i in zip(parsed_output,
+                          range(1,len(parsed_output)+1)):
+            item = item["audio"]
+            print(i, ":", html.parser.HTMLParser().unescape(pprint_song(item)))
+
+        n = input_num("Choose song (or 0 to quit): ", len(parsed_output)+1)
+
+        if n == 0: return 0
+        song_json = parsed_output[n-1]['audio']
+        download_song(song_json)
+
+def main(args):
+    global force, quiet, verbose
+
+    parser = argparse.ArgumentParser(description='Download a song from lastfm.')
+    parser.add_argument('query', type=str,
+                       help='A string to search for, ie. "Michael Jackson - Beat It"')
+    parser.add_argument('-v','--verbose', action='store_true',
+                        help='Prints verbose messages')
+    parser.add_argument('-f', '--force', action='store_true',
+                        help='Don\'t ask any questions, just download the first song or nothing')
+    parser.add_argument('-q', '--quiet', action='store_true',
+                        help='Don\'t print any messages. Implies -f')
+    args = parser.parse_args()
+    force = args.force
+    quiet = args.quiet
+    if quiet: force = True
+    verbose = args.verbose
+    query = args.query
+
+    return songdl(query)
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
