@@ -3,6 +3,26 @@ songdl
 
 songdl - A song downloader that uses last.fm to search and download songs
 
+Usage
+-----
+
+usage: songdl [-h] [-v] [-f] [-q] query
+
+Download a song from lastfm.
+
+positional arguments:
+  query          A string to search for, ie. "Michael Jackson - Beat It"
+
+optional arguments:
+  -h, --help     show this help message and exit
+  -v, --verbose  Prints verbose messages
+  -f, --force    Don't ask any questions, just download the first song or
+                 nothing
+  -q, --quiet    Don't print any messages. Implies -f
+
+History
+-------
+
 I found this method in some message board a long time ago.
 
 From wireshark:
